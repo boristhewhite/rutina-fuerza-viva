@@ -1,0 +1,650 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Rutina Fuerza Viva – Checklist</title>
+
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111111">
+
+<style>
+  :root{
+    --ok:#2e7d32; --warn:#f9a825; --info:#0277bd; --muted:#ccc;
+    --bgok:#e8f5e9; --bgwarn:#fffde7; --bginfo:#e3f2fd;
+  }
+  body{font-family:system-ui,-apple-system,Arial;margin:12px;color:#111}
+  h1{font-size:20px;margin:0 0 6px}
+  .small{font-size:13px;color:#555;margin:0 0 10px}
+  .stats{border:2px solid #111;border-radius:12px;padding:10px;margin:10px 0 16px;background:#fff}
+  .row{display:flex;justify-content:space-between;gap:10px;align-items:center;margin:6px 0}
+  .pill{font-size:12px;padding:2px 8px;border-radius:999px;background:#eee}
+  .bar{height:10px;background:#ddd;border-radius:999px;overflow:hidden}
+  .bar > div{height:10px;background:#111;width:0%}
+  .daysWrap{display:grid;gap:14px}
+  .day{border:2px solid var(--muted);border-radius:14px;padding:10px}
+  .day h2{font-size:18px;margin:0 0 8px}
+  .day.vacio{background:#fff}
+  .day.parcial{border-color:var(--warn);background:var(--bgwarn)}
+  .day.completo{border-color:var(--ok);background:var(--bgok)}
+  .day.cerrado{border-color:var(--info);background:var(--bginfo)}
+  .tools{background:#f5f5f5;border-radius:10px;padding:8px;margin:8px 0}
+  .tools label{display:inline-flex;align-items:center;gap:8px}
+  .group{border-top:1px solid #ddd;padding:10px 0}
+  .ghead{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+  .title{font-weight:700}
+  .sub{font-size:12px;color:#444}
+  .meta{font-size:12px;color:#222;white-space:nowrap}
+  .choices{margin-top:6px;display:grid;gap:6px}
+  .choice{display:flex;gap:10px;align-items:flex-start}
+  input[type="radio"], input[type="checkbox"]{transform:scale(1.25);margin-top:2px}
+  textarea{width:100%;min-height:52px;font-size:14px;margin-top:10px}
+  .timer{margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  button{padding:6px 10px;font-size:14px}
+  .muted{font-size:12px;color:#666}
+  .perday{display:grid;gap:6px;margin-top:8px}
+</style>
+</head>
+
+<body>
+<h1>Rutina Fuerza Viva – Checklist</h1>
+<p class="small">
+✔️ Marca 1 opción por ejercicio (principal o variante). Todo se guarda por semana. Offline/PWA si lo abres desde un servidor.
+</p>
+
+<div class="stats">
+  <div class="row">
+    <div><b>📊 Progreso semanal</b> <span class="pill" id="weekPill">—</span></div>
+    <div class="pill" id="kpi">0/35</div>
+  </div>
+  <div class="bar"><div id="bar"></div></div>
+  <div class="row">
+    <div class="muted">Variantes usadas</div>
+    <div class="pill" id="kpiVar">0</div>
+  </div>
+  <div class="row">
+    <div class="muted">Días completos</div>
+    <div class="pill" id="kpiDays">0/5</div>
+  </div>
+  <div class="perday" id="perDay"></div>
+
+  <div class="row" style="margin-top:10px">
+    <button id="resetBtn">🧹 Reset semana</button>
+  </div>
+</div>
+
+<div class="daysWrap" id="app"></div>
+
+<script>
+/* ====== WEEK KEY (ISO week) ====== */
+function isoWeekId(d=new Date()){
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1));
+  const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1)/7);
+  const y = date.getUTCFullYear();
+  return `${y}-W${String(weekNo).padStart(2,"0")}`;
+}
+const WEEK = isoWeekId();
+const KEY = `rutina_viva:${WEEK}:`;
+document.getElementById("weekPill").textContent = WEEK;
+
+/* ====== TIMER ====== */
+let timerInt = null;
+function startTimer(seconds, outEl){
+  clearInterval(timerInt);
+  let s = seconds;
+  const render = () => {
+    const m = Math.floor(s/60);
+    const r = s % 60;
+    outEl.textContent = `${m>0? (m+"m "):""}${String(r).padStart(2,"0")}s`;
+  };
+  render();
+  timerInt = setInterval(()=>{
+    s--;
+    if(s<=0){
+      clearInterval(timerInt);
+      outEl.textContent = "✔️";
+      return;
+    }
+    render();
+  }, 1000);
+}
+
+/* ====== DATA (da tua sequenza completa) ====== */
+const DAYS = [
+  {
+    day: 1,
+    title: "Día 1 – Pecho / Tríceps / Abdomen",
+    groups: [
+      { es:"Pecho superior multipower", it:"Press pettorale inclinato al multipower", sets:"4", reps:"10",
+        variants:[
+          {es:"Press inclinado con mancuernas", it:"Press inclinato con manubri"},
+          {es:"Press máquina convergente", it:"Press orizzontale su macchina convergente"},
+          {es:"Flexiones con lastre", it:"Flessioni con sovraccarico"},
+        ]
+      },
+      { es:"Apertura pecho polea", it:"Croci ai cavi", sets:"3", reps:"10",
+        variants:[
+          {es:"Aperturas con mancuernas", it:"Croci con manubri"},
+          {es:"Pec deck (máquina)", it:"Pec deck (macchina)"},
+          {es:"Apertura con banda elástica", it:"Croci con banda elastica"},
+        ]
+      },
+      { es:"Press pecho pesas (plano)", it:"Distensioni pettorali con manubri (panca piana)", sets:"4", reps:"10",
+        variants:[
+          {es:"Press horizontal en máquina", it:"Press orizzontale alla macchina"},
+          {es:"Press banca barra libre", it:"Panca piana con bilanciere"},
+          {es:"Flexiones", it:"Flessioni"},
+        ]
+      },
+      { es:"Tríceps polea cuerda", it:"Estensioni ai cavi con corda", sets:"3", reps:"10",
+        variants:[
+          {es:"Extensión por encima con mancuernas", it:"Estensione sopra la testa con manubri"},
+          {es:"Fondos asistidos (dip machine)", it:"Dip alla macchina (assistiti)"},
+          {es:"Polea con barra recta", it:"Cavo con barra dritta"},
+        ]
+      },
+      { es:"Tríceps máquina", it:"Spinta tricipiti alla macchina", sets:"4", reps:"10",
+        variants:[
+          {es:"Press francés barra Z", it:"French press con bilanciere EZ"},
+          {es:"Fondos en banco", it:"Dip su panca"},
+          {es:"Extensión unilateral mancuerna", it:"Estensione tricipite a un braccio"},
+        ]
+      },
+      { es:"Plancha", it:"Plank frontale", sets:"4", reps:"45″", timers:[45],
+        variants:[
+          {es:"Plancha lateral", it:"Plank laterale"},
+          {es:"Plancha con fitball", it:"Plank con fitball"},
+          {es:"Plancha con desplazamiento", it:"Plank con spostamento"},
+        ]
+      },
+      { es:"Elevación piernas", it:"Sollevamenti gambe", sets:"4", reps:"10",
+        variants:[
+          {es:"Crunch inverso", it:"Crunch inverso"},
+          {es:"Hanging leg raise", it:"Sollevamenti gambe alla sbarra"},
+          {es:"AB wheel (rodillo)", it:"AB wheel (ruota)"},
+        ]
+      },
+    ]
+  },
+  {
+    day: 2,
+    title: "Día 2 – Piernas / Glúteo / Lumbar",
+    groups: [
+      { es:"Hip con barra", it:"Hip thrust con bilanciere", sets:"4", reps:"8",
+        variants:[
+          {es:"Hip thrust en máquina", it:"Hip thrust alla macchina"},
+          {es:"Puente glúteo con disco", it:"Ponte glutei con disco"},
+          {es:"Sentadilla sumo con mancuerna", it:"Squat sumo con manubrio"},
+        ]
+      },
+      { es:"Peso muerto", it:"Stacco da terra", sets:"3", reps:"10",
+        variants:[
+          {es:"Peso muerto rumano (Smith/mancuernas)", it:"Stacco rumeno (Smith/manubri)"},
+          {es:"Buenos días", it:"Good morning con bilanciere"},
+          {es:"Peso muerto con mancuernas", it:"Stacco con manubri"},
+        ]
+      },
+      { es:"Glúteo máquina (kickback)", it:"Macchina glutei (calcio indietro)", sets:"3", reps:"10",
+        variants:[
+          {es:"Kickback en polea baja", it:"Calcio indietro alla puleggia"},
+          {es:"Bandas elásticas tobillo", it:"Banda elastica alla caviglia"},
+          {es:"Step-up con mancuerna", it:"Step-up con manubrio"},
+        ]
+      },
+      { es:"Femoral máquina", it:"Curl femorale", sets:"4", reps:"10",
+        variants:[
+          {es:"Curl femoral tumbado", it:"Leg curl prono"},
+          {es:"Curl con fitball", it:"Leg curl con fitball"},
+          {es:"Peso muerto rumano", it:"Stacco rumeno"},
+        ]
+      },
+      { es:"Abducción máquina", it:"Macchina abduzioni", sets:"3", reps:"10",
+        variants:[
+          {es:"Abducción en polea baja", it:"Abduzione a puleggia bassa"},
+          {es:"Banda elástica (lateral walk)", it:"Camminata laterale con elastico"},
+          {es:"Step lateral", it:"Step laterale"},
+        ]
+      },
+      { es:"Gemelos en prensa", it:"Polpacci su pressa", sets:"3", reps:"10",
+        variants:[
+          {es:"Elevación de talones de pie", it:"Calf raise in piedi"},
+          {es:"Elevación de talones sentado", it:"Calf raise seduto"},
+          {es:"Subidas al escalón", it:"Salite sul gradino"},
+        ]
+      },
+      { es:"Banco lumbar 5kg", it:"Estensioni lombari su panca", sets:"3", reps:"10",
+        variants:[
+          {es:"Superman", it:"Superman a terra"},
+          {es:"Extensión lumbar en máquina", it:"Estensione lombare alla macchina"},
+          {es:"Peso muerto rumano ligero", it:"Stacco rumeno leggero"},
+        ]
+      },
+    ]
+  },
+  {
+    day: 3,
+    title: "Día 3 – Espalda / Bíceps / Abdomen",
+    groups: [
+      { es:"Jalón al pecho polea", it:"Lat machine avanti", sets:"4", reps:"10",
+        variants:[
+          {es:"Dominadas asistidas", it:"Trazioni assistite"},
+          {es:"Remo barra T", it:"Rematore con barra T"},
+          {es:"Pullover en máquina/cable", it:"Pullover alla macchina/cavo"},
+        ]
+      },
+      { es:"Face pull cuerda", it:"Rematore al viso con corda", sets:"3", reps:"10",
+        variants:[
+          {es:"Bandas elásticas al rostro", it:"Elastici al viso"},
+          {es:"Remo inverso TRX", it:"Rematore inverso TRX"},
+          {es:"Máquina deltoide posterior", it:"Macchina deltoide posteriore"},
+        ]
+      },
+      { es:"Remo Gironda (máquina)", it:"Rematore alla macchina", sets:"4", reps:"10",  /* <- corretto */
+        variants:[
+          {es:"Remo mancuerna 1 brazo", it:"Rematore manubrio 1 braccio"},
+          {es:"Remo con barra", it:"Rematore con bilanciere"},
+          {es:"Remo TRX", it:"Rematore TRX"},
+        ]
+      },
+      { es:"Bíceps polea cuerda", it:"Curl ai cavi con corda", sets:"3", reps:"10",
+        variants:[
+          {es:"Curl mancuernas alternado", it:"Curl alternato con manubri"},
+          {es:"Curl barra recta", it:"Curl con bilanciere dritto"},
+          {es:"Curl concentrado", it:"Curl concentrato"},
+        ]
+      },
+      { es:"Bíceps barra Z", it:"Curl con bilanciere EZ", sets:"4", reps:"10",
+        variants:[
+          {es:"Curl en máquina", it:"Curl alla macchina"},
+          {es:"Curl con banda", it:"Curl con elastico"},
+          {es:"Curl martillo", it:"Curl a martello"},
+        ]
+      },
+      { es:"Abdomen lateral máquina", it:"Macchina addominali laterali", sets:"3", reps:"12",
+        variants:[
+          {es:"Plancha lateral", it:"Plank laterale"},
+          {es:"Lateral crunch mancuerna", it:"Crunch laterale con manubrio"},
+          {es:"Woodchopper polea", it:"Woodchopper alla puleggia"},
+        ]
+      },
+      { es:"Crunch abdomen máquina", it:"Crunch alla macchina", sets:"4", reps:"10",
+        variants:[
+          {es:"Crunch fitball", it:"Crunch su fitball"},
+          {es:"Crunch cable", it:"Crunch al cavo"},
+          {es:"Crunch inverso", it:"Crunch inverso"},
+        ]
+      },
+    ]
+  },
+  {
+    day: 4,
+    title: "Día 4 – Piernas / Hombros / Cardio",
+    groups: [
+      { es:"Sentadilla multipower", it:"Squat guidato (multipower)", sets:"4", reps:"10",
+        variants:[
+          {es:"Sentadilla libre", it:"Squat libero"},
+          {es:"Prensa inclinada", it:"Pressa inclinata"},
+          {es:"Goblet squat", it:"Goblet squat"},
+        ]
+      },
+      { es:"Hack cuadriceps", it:"Hack squat", sets:"3", reps:"10",
+        variants:[
+          {es:"Prensa horizontal", it:"Pressa orizzontale"},
+          {es:"Sentadilla búlgara", it:"Affondo bulgaro"},
+          {es:"Extensión unilateral", it:"Leg extension unilaterale"},
+        ]
+      },
+      { es:"Abducción máquina", it:"Macchina abduzioni", sets:"3", reps:"10",
+        variants:[
+          {es:"Banda elástica (lateral walk)", it:"Camminata laterale con elastico"},
+          {es:"Polea tobillo", it:"Puleggia alla caviglia"},
+          {es:"Step lateral", it:"Step laterale"},
+        ]
+      },
+      { es:"Cuádriceps máquina", it:"Macchina quadricipiti", sets:"4", reps:"10",
+        variants:[
+          {es:"Zancadas caminando", it:"Affondi camminati"},
+          {es:"Step-up", it:"Salita sul gradino"},
+          {es:"Sissy squat", it:"Sissy squat"},
+        ]
+      },
+      { es:"Press hombros máquina", it:"Spinta spalle alla macchina", sets:"3", reps:"10",
+        variants:[
+          {es:"Press militar mancuernas", it:"Military press con manubri"},
+          {es:"Press con barra", it:"Military press con bilanciere"},
+          {es:"Pike push-up", it:"Pike push-up"},
+        ]
+      },
+      { es:"Elevación lateral pesas", it:"Alzate laterali con manubri", sets:"3", reps:"10",
+        variants:[
+          {es:"Elevación lateral polea", it:"Alzate laterali al cavo"},
+          {es:"Máquina deltoide lateral", it:"Macchina deltoide laterale"},
+          {es:"Bandas elásticas", it:"Elastici"},
+        ]
+      },
+      { es:"Cinta o elíptica", it:"Tapis roulant o ellittica", sets:"—", reps:"15′", timers:[900],
+        variants:[
+          {es:"Bicicleta estática", it:"Cyclette"},
+          {es:"Stair master", it:"Scalini"},
+          {es:"Remo ergómetro", it:"Vogatore"},
+        ]
+      },
+    ]
+  },
+  {
+    day: 5,
+    title: "Día 5 – Mix",
+    groups: [
+      { es:"Flexiones", it:"Flessioni a terra", sets:"3", reps:"10",
+        variants:[
+          {es:"Press banca", it:"Panca piana"},
+          {es:"Fondos paralelas", it:"Dip alle parallele"},
+          {es:"Press con mancuernas", it:"Distensioni con manubri"},
+        ]
+      },
+      { es:"Prensa perna", it:"Pressa per gambe", sets:"3", reps:"10",
+        variants:[
+          {es:"Sentadilla libre", it:"Squat libero"},
+          {es:"Hack", it:"Hack squat"},
+          {es:"Step-up", it:"Salita sul gradino"},
+        ]
+      },
+      { es:"Remo unilateral pesa", it:"Rematore con manubrio", sets:"3", reps:"10",
+        variants:[
+          {es:"Remo TRX", it:"Rematore TRX"},
+          {es:"Remo en máquina", it:"Rematore alla macchina"},
+          {es:"Remo polea baja", it:"Rematore al cavo basso"},
+        ]
+      },
+      { es:"Zancadas con pesas", it:"Affondi con manubri", sets:"3", reps:"10",
+        variants:[
+          {es:"Split squat", it:"Split squat"},
+          {es:"Zancada atrás", it:"Affondo indietro"},
+          {es:"Caminata con mancuernas", it:"Camminata con manubri"},
+        ]
+      },
+      { es:"Sentadilla Sumo (con pesa)", it:"Squat sumo con manubrio", sets:"3", reps:"10",
+        variants:[
+          {es:"Peso muerto sumo", it:"Stacco sumo"},
+          {es:"Kettlebell swing", it:"Swing con kettlebell"},
+          {es:"Puente glúteo", it:"Ponte glutei"},
+        ]
+      },
+      { es:"Elíptica", it:"Ellittica", sets:"—", reps:"10′", timers:[600],
+        variants:[
+          {es:"Cinta inclinada", it:"Tapis inclinato"},
+          {es:"Bicicleta", it:"Bici"},
+          {es:"Saltos suaves", it:"Saltelli leggeri"},
+        ]
+      },
+      { es:"Bici suave", it:"Cyclette", sets:"—", reps:"10′", timers:[600],
+        variants:[
+          {es:"Caminata", it:"Camminata"},
+          {es:"Cinta", it:"Tapis roulant"},
+          {es:"Elíptica", it:"Ellittica"},
+        ]
+      },
+    ]
+  },
+];
+
+/* ====== RENDER ====== */
+function el(tag, attrs={}, children=[]){
+  const n = document.createElement(tag);
+  for(const [k,v] of Object.entries(attrs)){
+    if(k==="class") n.className = v;
+    else if(k==="html") n.innerHTML = v;
+    else n.setAttribute(k, v);
+  }
+  for(const c of children) n.appendChild(c);
+  return n;
+}
+
+function render(){
+  const app = document.getElementById("app");
+  app.innerHTML = "";
+
+  DAYS.forEach(d=>{
+    const dayId = `d${d.day}`;
+    const dayBox = el("div", {class:"day vacio", "data-day": String(d.day)});
+    dayBox.appendChild(el("h2", {html: d.title}));
+
+    // tools
+    const tools = el("div", {class:"tools"});
+    const closedId = `${dayId}:closed`;
+    const runId = `${dayId}:run12`;
+
+    const closed = el("input", {type:"checkbox", id: closedId});
+    const closedLabel = el("label", {}, [closed, document.createTextNode(" Palestra chiusa")]);
+    tools.appendChild(closedLabel);
+
+    tools.appendChild(el("div",{class:"muted",html:"Se la palestra está cerrada, marca la carrera de 12′ (parque) y añade notas si quieres."}));
+
+    const run = el("input", {type:"checkbox", id: runId});
+    const runLabel = el("label", {}, [run, document.createTextNode(" Correr 12′ (parque) – hecho")]);
+    tools.appendChild(el("div", {style:"margin-top:6px"} , [runLabel]));
+
+    // timers
+    const tWrap = el("div",{class:"timer"});
+    const out = el("span",{class:"pill", id:`${dayId}:timerOut` , style:"background:#fff"});
+    const btnPlank = el("button",{type:"button"},[]);
+    btnPlank.textContent = "⏱️ Plank 45″";
+    btnPlank.onclick = ()=>startTimer(45,out);
+
+    const btnCardio10 = el("button",{type:"button"},[]);
+    btnCardio10.textContent = "⏱️ Cardio 10′";
+    btnCardio10.onclick = ()=>startTimer(600,out);
+
+    const btnCardio15 = el("button",{type:"button"},[]);
+    btnCardio15.textContent = "⏱️ Cardio 15′";
+    btnCardio15.onclick = ()=>startTimer(900,out);
+
+    const btnRun12 = el("button",{type:"button"},[]);
+    btnRun12.textContent = "⏱️ Corsa 12′";
+    btnRun12.onclick = ()=>startTimer(720,out);
+
+    tWrap.appendChild(btnPlank);
+    tWrap.appendChild(btnCardio10);
+    tWrap.appendChild(btnCardio15);
+    tWrap.appendChild(btnRun12);
+    tWrap.appendChild(out);
+    tools.appendChild(tWrap);
+
+    dayBox.appendChild(tools);
+
+    // groups
+    d.groups.forEach((g, gi)=>{
+      const groupId = `${dayId}:g${gi+1}`;
+      const wrap = el("div",{class:"group"});
+      const head = el("div",{class:"ghead"});
+      head.appendChild(el("div", {html:`<div class="title">${g.es}</div><div class="sub">${g.it}</div>`}));
+      head.appendChild(el("div", {class:"meta", html:`${g.sets} × ${g.reps}`}));
+      wrap.appendChild(head);
+
+      const choices = el("div",{class:"choices"});
+
+      // main choice (radio)
+      const mainVal = "main";
+      const name = `${groupId}:pick`;
+      const mainId = `${groupId}:${mainVal}`;
+      const rMain = el("input",{type:"radio", name, id: mainId, value: mainVal});
+      const mainRow = el("div",{class:"choice"});
+      mainRow.appendChild(rMain);
+      mainRow.appendChild(el("div",{html:`<div><b>Principal</b> — ${g.es}</div><div class="sub">${g.it}</div>`}));
+      choices.appendChild(mainRow);
+
+      // 3 variants
+      g.variants.forEach((v, vi)=>{
+        const vVal = `v${vi+1}`;
+        const vId = `${groupId}:${vVal}`;
+        const rV = el("input",{type:"radio", name, id: vId, value: vVal});
+        const vRow = el("div",{class:"choice"});
+        vRow.appendChild(rV);
+        vRow.appendChild(el("div",{html:`<div>Variante ${vi+1} — ${v.es}</div><div class="sub">${v.it}</div>`}));
+        choices.appendChild(vRow);
+      });
+
+      wrap.appendChild(choices);
+      dayBox.appendChild(wrap);
+    });
+
+    // notes
+    const notes = el("textarea",{id:`${dayId}:notes`, placeholder:`📝 Notas del día ${d.day} (p.ej. “hoy pesi più bassi”, “cardio más lento”… )`});
+    dayBox.appendChild(notes);
+
+    app.appendChild(dayBox);
+  });
+}
+
+/* ====== STORAGE (load/save) ====== */
+function save(key, val){ localStorage.setItem(KEY+key, val); }
+function load(key){ return localStorage.getItem(KEY+key); }
+
+function hook(){
+  // per-day closed/run/notes
+  DAYS.forEach(d=>{
+    const dayId = `d${d.day}`;
+    const closedEl = document.getElementById(`${dayId}:closed`);
+    const runEl = document.getElementById(`${dayId}:run12`);
+    const notesEl = document.getElementById(`${dayId}:notes`);
+
+    // load
+    closedEl.checked = load(`${dayId}:closed`) === "1";
+    runEl.checked = load(`${dayId}:run12`) === "1";
+    notesEl.value = load(`${dayId}:notes`) || "";
+
+    // events
+    closedEl.addEventListener("change", ()=>{
+      save(`${dayId}:closed`, closedEl.checked ? "1":"0");
+      updateAll();
+    });
+    runEl.addEventListener("change", ()=>{
+      save(`${dayId}:run12`, runEl.checked ? "1":"0");
+      updateAll();
+    });
+    notesEl.addEventListener("input", ()=>{
+      save(`${dayId}:notes`, notesEl.value);
+    });
+
+    // groups radios
+    d.groups.forEach((g,gi)=>{
+      const groupId = `${dayId}:g${gi+1}`;
+      const name = `${groupId}:pick`;
+
+      // load selected
+      const picked = load(name);
+      if(picked){
+        const id = `${groupId}:${picked}`;
+        const elr = document.getElementById(id);
+        if(elr) elr.checked = true;
+      }
+
+      // listen all radios in group
+      document.querySelectorAll(`input[type="radio"][name="${CSS.escape(name)}"]`).forEach(r=>{
+        r.addEventListener("change", ()=>{
+          if(r.checked) save(name, r.value);
+          updateAll();
+        });
+      });
+    });
+  });
+
+  document.getElementById("resetBtn").onclick = ()=>{
+    if(confirm(`Resetear toda la semana ${WEEK}?`)){
+      Object.keys(localStorage)
+        .filter(k=>k.startsWith(KEY))
+        .forEach(k=>localStorage.removeItem(k));
+      location.reload();
+    }
+  };
+}
+
+/* ====== STATS + DAY COLORS ====== */
+function groupDone(dayId, gi){
+  const name = `${dayId}:g${gi+1}:pick`;
+  const pick = load(name); // "main" or "v1..v3"
+  return !!pick;
+}
+function variantUsed(dayId, gi){
+  const name = `${dayId}:g${gi+1}:pick`;
+  const pick = load(name);
+  return pick && pick !== "main";
+}
+
+function updateAll(){
+  // totals
+  const totalGroups = DAYS.reduce((a,d)=>a+d.groups.length,0); // 35
+  let doneGroups = 0;
+  let usedVariants = 0;
+  let doneDays = 0;
+
+  const perDayEl = document.getElementById("perDay");
+  perDayEl.innerHTML = "";
+
+  DAYS.forEach(d=>{
+    const dayId = `d${d.day}`;
+    const closed = load(`${dayId}:closed`) === "1";
+    const run12 = load(`${dayId}:run12`) === "1";
+
+    let doneInDay = 0;
+    d.groups.forEach((g,gi)=>{
+      if(groupDone(dayId, gi)){
+        doneInDay++;
+        doneGroups++;
+        if(variantUsed(dayId, gi)) usedVariants++;
+      }
+    });
+
+    // day color
+    const dayBox = document.querySelector(`.day[data-day="${d.day}"]`);
+    dayBox.classList.remove("vacio","parcial","completo","cerrado");
+
+    const allDone = doneInDay === d.groups.length;
+    const anyDone = doneInDay > 0;
+
+    // "Palestra chiusa" day logic:
+    // - If closed ON and run12 checked => consider day completed (even if strength unchecked).
+    // - If closed ON but run12 not checked => day "cerrado" but not counted as completed.
+    if(closed){
+      dayBox.classList.add("cerrado");
+      if(run12) doneDays++;
+    }else{
+      if(allDone){ dayBox.classList.add("completo"); doneDays++; }
+      else if(anyDone){ dayBox.classList.add("parcial"); }
+      else dayBox.classList.add("vacio");
+    }
+
+    // per-day line
+    const pct = Math.round((doneInDay/d.groups.length)*100);
+    const extra = closed ? (run12 ? " · 🏃 12′ OK" : " · 🏃 pendiente") : "";
+    const line = document.createElement("div");
+    line.className = "row";
+    line.innerHTML = `<div>Día ${d.day}</div><div class="pill">${doneInDay}/${d.groups.length} · ${pct}%${extra}</div>`;
+    perDayEl.appendChild(line);
+  });
+
+  // kpis
+  const pctTotal = Math.round((doneGroups/totalGroups)*100);
+  document.getElementById("kpi").textContent = `${doneGroups}/${totalGroups} · ${pctTotal}%`;
+  document.getElementById("bar").style.width = `${pctTotal}%`;
+  document.getElementById("kpiVar").textContent = `${usedVariants}`;
+  document.getElementById("kpiDays").textContent = `${doneDays}/5`;
+}
+
+/* ====== INIT ====== */
+render();
+hook();
+updateAll();
+
+/* ====== PWA (service worker) ====== */
+if("serviceWorker" in navigator){
+  window.addEventListener("load", ()=>{
+    navigator.serviceWorker.register("./sw.js").catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>
